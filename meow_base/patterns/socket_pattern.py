@@ -141,9 +141,12 @@ class SocketEventMonitor(BaseMonitor):
     # Port monitered
     port: int
     # Socket connected to monitored port
-    monitered_socket: socket
+    monitered_socket: socket.socket
     # Boolean to determine the status of the monitor
     _running: bool
+    # List of connections
+    connected_sockets: list[socket.socket]
+
     def __init__(self, tmpfile_dir:str, patterns:Dict[str,SocketEventPattern], 
                  recipes:Dict[str,BaseRecipe],port:int, autostart=False,
                  name:str="")->None: # TODO: print, logging for debugging
@@ -153,6 +156,7 @@ class SocketEventMonitor(BaseMonitor):
         self._is_valid_port(port)
         self.port = port
         self._running = False
+        self.connected_sockets = []
         self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         if autostart:
@@ -169,7 +173,10 @@ class SocketEventMonitor(BaseMonitor):
         self.monitered_socket.listen(1)
         self._running = True
         while self._running:
+            print("among")
             conn, _ = self.monitered_socket.accept()
+            print("us")
+            self.connected_sockets.append(conn)
             threading.Thread(
                 target=self.handle_connection,
                 args=(conn,)
@@ -179,7 +186,9 @@ class SocketEventMonitor(BaseMonitor):
     def handle_connection(self, conn):
         with conn:
             while self._running:
+                print("trynna read")
                 msg = conn.recv(1024)
+                print("ok...")
                 if not msg:
                     return
                 tmp_file = tempfile.NamedTemporaryFile(
@@ -194,7 +203,13 @@ class SocketEventMonitor(BaseMonitor):
 
     # stop the system monitoring
     def stop(self):
+        '''
+        for conn in self.connected_sockets:
+            print("closing connected socket")
+            conn.close()
+        '''
         self._running = False
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, self.port))
         self.monitered_socket.close()
     
     # TODO: given an event, determine a match based on patterns; send event to runner
@@ -217,123 +232,6 @@ class SocketEventMonitor(BaseMonitor):
     def _is_valid_patterns(self, patterns:Dict[str,SocketEventPattern])->None:
         valid_dict(patterns, str, SocketEventPattern, min_length=0, strict=False)
 
-    def _is_valid_recipes(self, recipes:Dict[str,BaseRecipe])->None:
-        valid_dict(recipes, str, BaseRecipe, min_length=0, strict=False)
-    
-    def _get_valid_pattern_types(self)->List[type]:
-        return [SocketEventPattern]
-    
-    def _get_valid_recipe_types(self)->List[type]:
-        return [BaseRecipe]
-
-# TODO: Socket monitor
-class SocketEventMonitorOld(BaseMonitor):
-    # The directory of the temporary message file(s)
-    base_dir: str
-    # Port listened on
-    triggering_port: int
-    # The socket listened to
-    triggering_socket: socket
-    # List of temporary files TODO: consider deleting this if it's not used
-    # temp_files: List[str]
-    # Bool indicating status of socket
-    _stopped: bool
-    # print target
-    _print_target:Any
-    # debug level
-    debug_level:int
-    def __init__(self, base_dir:str, patterns:Dict[str,SocketEventPattern], 
-                 recipes:Dict[str,BaseRecipe],triggering_port:int, autostart=False,
-                 name:str="", print:Any=sys.stdout, logging:int=0)->None:
-        super().__init__(patterns, recipes, name=name)
-        self._is_valid_base_dir(base_dir)
-        self.base_dir = base_dir
-        self._is_valid_port(triggering_port)
-        self.triggering_port = triggering_port
-        # self.temp_files = []
-        self._print_target, self.debug_level = setup_debugging(print, logging)
-        self.triggering_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._stopped = True
-        print_debug(self._print_target, self.debug_level, 
-            "Created new WatchdogMonitor instance", DEBUG_INFO)
-        
-        if autostart:
-            self.start()
-        
-    def _is_valid_base_dir(self, base_dir):
-        valid_dir_path(base_dir, must_exist=True)
-
-    def _is_valid_port(self, triggering_port:int)->None:
-        if not isinstance(triggering_port, int):
-            raise ValueError (
-                f"Port '{triggering_port}' is not of type int."
-            )
-        elif not (1023 < triggering_port < 49152):
-            raise ValueError (
-                f"Port '{triggering_port}' is not valid."
-            )
-
-    def start(self):
-        if self._stopped:
-            threading.Thread(
-                target=self.main_loop
-            ).start()
-        else:
-            # TODO: some error here
-            pass
-
-    def main_loop(self):
-        self.triggering_socket.bind((SERVER, self.triggering_port))
-        self.triggering_socket.listen(1)
-        self._stopped = False
-        while not self._stopped:
-            try:
-                conn, _ = self.triggering_socket.accept()
-            except socket.timeout:
-                pass
-            except OSError:
-                if self._stopped:
-                    break
-                else:
-                    raise
-            except:
-                raise
-            else:
-                self._connected = True
-                threading.Thread(
-                    target=self.handle_event,
-                    args=(conn, time())
-                ).start()
-
-    def stop(self):
-        self._stopped = True
-        self._connected = False
-        self.triggering_socket.close()
-
-    def handle_event(self, conn, ttime):
-        with conn:
-            while self._connected:
-                msg = conn.recv(1024)
-                print(f"received: {msg}")
-                if not msg:
-                    break
-                tmp_file = tempfile.NamedTemporaryFile(
-                    "wb", delete=False, dir=self.base_dir
-                )
-                tmp_file.write(msg)
-
-                meow_event = create_socket_event(
-                    tmp_file.name, list(self._rules.values())[0], self.base_dir, time()
-                )
-                self.match(meow_event)
-
-    # Does a given event match the current rules.
-    def match(self, event)->None:
-        self.send_event_to_runner(event)
-
-    def _is_valid_patterns(self, patterns:Dict[str,SocketEventPattern])->None:
-        valid_dict(patterns, str, SocketEventPattern, min_length=0, strict=False)
-    
     def _is_valid_recipes(self, recipes:Dict[str,BaseRecipe])->None:
         valid_dict(recipes, str, BaseRecipe, min_length=0, strict=False)
     

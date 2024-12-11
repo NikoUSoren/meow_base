@@ -333,4 +333,3 @@ class SocketEventMonitorTests(unittest.TestCase):
         # TODO: rule name?
         
         sm.stop()
-    
