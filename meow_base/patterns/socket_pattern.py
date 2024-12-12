@@ -223,7 +223,7 @@ class SocketEventMonitor(BaseMonitor):
                 tmp_file.write(msg)
 
                 meow_event = create_socket_event(
-                    tmp_file.name, list(self._rules.values())[0], self.tmpfile_dir, time()
+                    tmp_file.name, rule, self.tmpfile_dir, time()
                 )   
                 self.send_event_to_runner(meow_event)
 
