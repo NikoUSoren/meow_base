@@ -74,54 +74,54 @@ class SocketEventPatternTests(unittest.TestCase):
 
     # Test creating a SocketEventPattern
     def testSocketEventPatternCreationMinimum(self)->None:
-        SocketEventPattern("name", TEST_PORT, "recipe", "msg")
+        SocketEventPattern("name", TEST_SERVER, TEST_PORT, "recipe", "msg")
 
     # Test SocketEventPattern not created with empty name
     def testSocketEventPatternCreationEmptyName(self)->None:
         with self.assertRaises(ValueError):
-            SocketEventPattern("", TEST_PORT, "recipe", "msg")
+            SocketEventPattern("", TEST_SERVER, TEST_PORT, "recipe", "msg")
 
     # Testing empty port? Does this even make sense (no)
 
     # Test SocketEventPattern not created with empty recipe
     def testSocketPatternCreationEmptyRecipe(self)->None:
         with self.assertRaises(ValueError):
-            SocketEventPattern("name", TEST_PORT, "", "msg")
+            SocketEventPattern("name", TEST_SERVER, TEST_PORT, "", "msg")
 
     # Empty file? Empty Message? You can send an empty message just fine, so probably not
 
     # Test SocketEventPattern not created with invalid name
     def testSocketEventPatternCreationInvalidName(self)->None:
         with self.assertRaises(ValueError):
-            SocketEventPattern("@name", TEST_PORT, "recipe", "msg")
+            SocketEventPattern("@name", TEST_SERVER, TEST_PORT, "recipe", "msg")
     
     # Test SocketEventPattern not created with invalid recipe
     def testSocketEventPatternCreationInvalidRecipe(self)->None:
         with self.assertRaises(ValueError):
-            SocketEventPattern("name", TEST_PORT, "@recipe", "msg")
+            SocketEventPattern("name", TEST_SERVER, TEST_PORT, "@recipe", "msg")
 
     # Test SocketEventPattern not created with invalid port
     def testSocketEventPatternCreationInvalidPort(self)->None:
         with self.assertRaises(ValueError):
-            SocketEventPattern("name", -1, "recipe", "msg")
+            SocketEventPattern("name", TEST_SERVER, -1, "recipe", "msg")
     
     # TODO: Invalid message?
 
     # Test SocketEventPattern created with valid name
     def testSocketEventPatternSetupName(self)->None:
         name = "name"
-        sep = SocketEventPattern(name, TEST_PORT, "recipe", "msg")
+        sep = SocketEventPattern(name, TEST_SERVER, TEST_PORT, "recipe", "msg")
         self.assertEqual(sep.name, name)
 
     # Test SocketEventPattern created with valid port
     def testFileEventPatternSetupPath(self)->None:
-        sep = SocketEventPattern("name", TEST_PORT, "recipe", "file")
+        sep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, "recipe", "file")
         self.assertEqual(sep.triggering_port, TEST_PORT)
 
     # Test SocketEventPattern created with valid recipe
     def testSocketEventPatternSetupRecipe(self)->None:
         recipe = "recipe"
-        sep = SocketEventPattern("name", TEST_PORT, recipe, "msg")
+        sep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, recipe, "msg")
         self.assertEqual(sep.recipe, recipe)
 
     # TODO: SetupMsg
@@ -133,7 +133,7 @@ class SocketEventPatternTests(unittest.TestCase):
             "b": True
         }
         sep = SocketEventPattern(
-            "name", TEST_PORT, "recipe", "msg", parameters=parameters)
+            "name", TEST_SERVER, TEST_PORT, "recipe", "msg", parameters=parameters)
         self.assertEqual(sep.parameters, parameters)
 
     # SetupOutputs
@@ -143,7 +143,7 @@ class SocketEventPatternTests(unittest.TestCase):
             "b": "b"
         }
         sep = SocketEventPattern(
-            "name", TEST_PORT, "recipe", "msg", outputs=outputs)
+            "name", TEST_SERVER, TEST_PORT, "recipe", "msg", outputs=outputs)
         self.assertEqual(sep.outputs, outputs)
 
     # Event masks?
@@ -162,7 +162,8 @@ class SocketEventPatternTests(unittest.TestCase):
                 SWEEP_JUMP: -2
             }
         }
-        sep = SocketEventPattern("name", TEST_PORT, "recipe", "msg", sweep=sweeps)
+        sep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, "recipe", "msg", 
+                                 sweep=sweeps)
         self.assertEqual(sep.sweep, sweeps)
 
         bad_sweep = {
@@ -173,7 +174,7 @@ class SocketEventPatternTests(unittest.TestCase):
             },
         }
         with self.assertRaises(ValueError):
-            fep = FileEventPattern("name", "path", "recipe", "file", 
+            fep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, "recipe", "file", 
                 sweep=bad_sweep)
 
         bad_sweep = {
@@ -184,7 +185,7 @@ class SocketEventPatternTests(unittest.TestCase):
             }
         }
         with self.assertRaises(ValueError):
-            fep = FileEventPattern("name", "path", "recipe", "file", 
+            fep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, "recipe", "file", 
                 sweep=bad_sweep)
 
 
@@ -200,6 +201,7 @@ class SocketEventMonitorTests(unittest.TestCase):
     def testCreateSocketEvent(self)->None:
         pattern = SocketEventPattern(
             "pattern",
+            TEST_SERVER,
             TEST_PORT,
             "recipe_one",
             "msg",
@@ -284,7 +286,7 @@ class SocketEventMonitorTests(unittest.TestCase):
         from_monitor_reader, from_monitor_writer = Pipe()
 
         pattern_one = SocketEventPattern(
-            "pattern_one", TEST_PORT, "recipe_one", "message_one")
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one")
         recipe = JupyterNotebookRecipe(
             "recipe_one", BAREBONES_NOTEBOOK)
         

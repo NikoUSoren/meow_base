@@ -5,6 +5,7 @@ import os
 import socket
 import hashlib
 import tempfile
+import re
 
 from fnmatch import translate
 from re import match
@@ -58,20 +59,30 @@ def valid_socket_event(event):
     valid_meow_dict(event, "Socket file event", WATCHDOG_EVENT_KEYS)
 
 class SocketEventPattern(BasePattern):
+    triggering_addr: str
+
     triggering_port: int
 
+    # Consider deleting this for now
     triggering_msg: Any
 
-    def __init__(self, name:str, triggering_port:int, recipe:str, triggering_msg: Any, 
+    def __init__(self, name:str, triggering_addr:str,
+                 triggering_port:int, recipe:str, triggering_msg: Any, 
                  parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},sweep:Dict[str,Any]={},
                  notifications:Dict[str,Any]={}, tracing:str=""):
         super().__init__(name, recipe, parameters=parameters, outputs=outputs, 
             sweep=sweep, notifications=notifications, tracing=tracing)
+        self._is_valid_address(triggering_addr)
+        self.triggering_addr = triggering_addr
         self._is_valid_port(triggering_port)
         self.triggering_port = triggering_port
         self._is_valid_message(triggering_msg)
         self.triggering_msg = triggering_msg
         # possible TODO: validate and assign any potential event mask
+
+    # TODO: validate the address; should probably be a regular expression
+    def _is_valid_address(self, triggering_addr:str)->None:
+        pass
 
     def _is_valid_port(self, triggering_port:int)->None:
         if not isinstance(triggering_port, int):
@@ -84,9 +95,9 @@ class SocketEventPattern(BasePattern):
             )
 
     # TODO: validate the message
-    def _is_valid_message(self, triggering_msg:str)->None:
+    def _is_valid_message(self, triggering_msg:Any)->None:
         pass
-        
+
     def _is_valid_recipe(self, recipe:str)->None:
         valid_string(
             recipe, 
@@ -173,33 +184,21 @@ class SocketEventMonitor(BaseMonitor):
         self.monitered_socket.listen(1)
         self._running = True
         while self._running:
-            print("among")
-            conn, _ = self.monitered_socket.accept()
-            print("us")
+            conn, addr = self.monitered_socket.accept()
             self.connected_sockets.append(conn)
             threading.Thread(
                 target=self.handle_connection,
-                args=(conn,)
+                args=(conn, addr)
             ).start()
 
     # handle the actual connection, read the message
-    def handle_connection(self, conn):
+    def handle_connection(self, conn, addr):
         with conn:
             while self._running:
-                print("trynna read")
                 msg = conn.recv(1024)
-                print("ok...")
                 if not msg:
                     return
-                tmp_file = tempfile.NamedTemporaryFile(
-                        "wb", delete=False, dir=self.tmpfile_dir
-                )
-                tmp_file.write(msg)
-
-                meow_event = create_socket_event(
-                        tmp_file.name, list(self._rules.values())[0], self.tmpfile_dir, time()
-                )
-                self.match(meow_event)
+                self.match(msg, addr)
 
     # stop the system monitoring
     def stop(self):
@@ -213,8 +212,21 @@ class SocketEventMonitor(BaseMonitor):
         self.monitered_socket.close()
     
     # TODO: given an event, determine a match based on patterns; send event to runner
-    def match(self, event):
-        self.send_event_to_runner(event)
+    def match(self, msg, addr):
+        for rule in self._rules.values():
+           print(addr[0])
+           matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
+           if matched_addr:
+                tmp_file = tempfile.NamedTemporaryFile(
+                    "wb", delete=False, dir=self.tmpfile_dir
+                )
+                tmp_file.write(msg)
+
+                meow_event = create_socket_event(
+                    tmp_file.name, list(self._rules.values())[0], self.tmpfile_dir, time()
+                )   
+                self.send_event_to_runner(meow_event)
+
 
     def _is_valid_tempfile_dir(self, tmpfile_dir):
         valid_dir_path(tmpfile_dir, must_exist=True)
