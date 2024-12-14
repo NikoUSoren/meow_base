@@ -169,6 +169,7 @@ class SocketEventMonitor(BaseMonitor):
         self._running = False
         self.connected_sockets = []
         self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.monitered_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         if autostart:
             self.start()
