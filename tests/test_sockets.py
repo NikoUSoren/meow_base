@@ -28,6 +28,9 @@ from .shared import SharedTestPattern, SharedTestRecipe, \
     BAREBONES_NOTEBOOK, TEST_MONITOR_BASE, COUNTING_PYTHON_SCRIPT, \
     APPENDING_NOTEBOOK, setup, teardown, check_port_in_use, \
     check_shutdown_port_in_timeout
+from ..meow_base.conductors import LocalPythonConductor
+from ..meow_base.recipes.python_recipe import PythonHandler, PythonRecipe
+from ..meow_base.core.runner import MeowRunner
 
 HEADER_LENGTH = 64
 TEST_PORT = 8080
@@ -335,3 +338,62 @@ class SocketEventMonitorTests(unittest.TestCase):
         # TODO: rule name?
         
         sm.stop()
+
+
+class SocketEventTests(unittest.TestCase):
+    def setUp(self)->None:
+        super().setUp()
+        setup()
+
+    def tearDown(self)->None:
+        super().tearDown()
+        teardown()
+
+    def testMeowRunnerSetup(self)->None:
+        monitor = SocketEventMonitor(TEST_MONITOR_BASE, {}, {}, TEST_PORT)
+
+        handler = PythonHandler(pause_time=0)
+
+        conductor = LocalPythonConductor(pause_time=0)
+
+        runner = MeowRunner(monitor, handler, conductor)
+    
+    def testPythonExecution(self)->None:
+        pattern_one = SocketEventPattern(
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one")
+        recipe = PythonRecipe(
+            "recipe_one", COUNTING_PYTHON_SCRIPT)
+        
+        patterns = {
+            pattern_one.name: pattern_one,
+        }
+        recipes = {
+            recipe.name: recipe,
+        }
+
+        monitor = SocketEventMonitor(TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
+
+        handler = PythonHandler(pause_time=0)
+
+        conductor = LocalPythonConductor(pause_time=0)
+
+        runner = MeowRunner(monitor, handler, conductor)
+
+        # conductor_to_test_conductor, conductor_to_test_test = Pipe(duplex=True)
+        # test_to_runner_runner, test_to_runner_test = Pipe(duplex=True)
+
+        # runner.conductors[0].to_runner_job = conductor_to_test_conductor
+
+        '''
+        for i in range(len(runner.job_connections)):
+            _, obj = runner.job_connections[i]
+
+            if obj == runner.conductors[0]:
+                runner.job_connections[i] = (test_to_runner_runner, runner.job_connections[i][1])
+        '''
+                
+        runner.start()
+
+        sleep(2)
+
+        runner.stop()

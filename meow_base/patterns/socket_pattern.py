@@ -180,8 +180,10 @@ class SocketEventMonitor(BaseMonitor):
 
     # handle incoming connections/messages
     def main_loop(self):
+        print(f"binding to {self.port}")
         self.monitered_socket.bind((SERVER, self.port))
         self.monitered_socket.listen(1)
+        print("bind and listen good")
         self._running = True
         while self._running:
             conn, addr = self.monitered_socket.accept()
@@ -209,7 +211,9 @@ class SocketEventMonitor(BaseMonitor):
         '''
         self._running = False
         socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, self.port))
+        print(f"closing {self.port}")
         self.monitered_socket.close()
+        print("closed good")
     
     # TODO: given an event, determine a match based on patterns; send event to runner
     def match(self, msg, addr):
