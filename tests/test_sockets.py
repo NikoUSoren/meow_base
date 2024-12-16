@@ -27,7 +27,7 @@ from ..meow_base.recipes.python_recipe import PythonRecipe
 from .shared import SharedTestPattern, SharedTestRecipe, \
     BAREBONES_NOTEBOOK, TEST_MONITOR_BASE, COUNTING_PYTHON_SCRIPT, \
     APPENDING_NOTEBOOK, setup, teardown, check_port_in_use, \
-    check_shutdown_port_in_timeout
+    check_shutdown_port_in_timeout, TEST_JOB_QUEUE, TEST_JOB_OUTPUT
 from ..meow_base.conductors import LocalPythonConductor
 from ..meow_base.recipes.python_recipe import PythonHandler, PythonRecipe
 from ..meow_base.core.runner import MeowRunner
@@ -336,6 +336,7 @@ class SocketEventMonitorTests(unittest.TestCase):
         # TODO: event path; don't have access to tmp file
         self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
         # TODO: rule name?
+        self.assertTrue(os.path.exists(event[EVENT_PATH]))
         
         sm.stop()
 
@@ -357,6 +358,8 @@ class SocketEventTests(unittest.TestCase):
         conductor = LocalPythonConductor(pause_time=0)
 
         runner = MeowRunner(monitor, handler, conductor)
+
+        # TODO: assert the monitor is correct type
     
     def testPythonExecution(self)->None:
         pattern_one = SocketEventPattern(
@@ -378,19 +381,6 @@ class SocketEventTests(unittest.TestCase):
         conductor = LocalPythonConductor(pause_time=0)
 
         runner = MeowRunner(monitor, handler, conductor)
-
-        # conductor_to_test_conductor, conductor_to_test_test = Pipe(duplex=True)
-        # test_to_runner_runner, test_to_runner_test = Pipe(duplex=True)
-
-        # runner.conductors[0].to_runner_job = conductor_to_test_conductor
-
-        '''
-        for i in range(len(runner.job_connections)):
-            _, obj = runner.job_connections[i]
-
-            if obj == runner.conductors[0]:
-                runner.job_connections[i] = (test_to_runner_runner, runner.job_connections[i][1])
-        '''
                 
         runner.start()
 

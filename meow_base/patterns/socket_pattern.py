@@ -219,7 +219,7 @@ class SocketEventMonitor(BaseMonitor):
     # TODO: given an event, determine a match based on patterns; send event to runner
     def match(self, msg, addr):
         for rule in self._rules.values():
-           print(addr[0])
+           # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
            if matched_addr:
                 tmp_file = tempfile.NamedTemporaryFile(
