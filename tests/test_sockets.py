@@ -376,11 +376,12 @@ class SocketEventTests(unittest.TestCase):
 
         monitor = SocketEventMonitor(TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
 
-        handler = PythonHandler(pause_time=0)
+        handler = PythonHandler(job_queue_dir=TEST_JOB_QUEUE)
 
-        conductor = LocalPythonConductor(pause_time=0)
+        conductor = LocalPythonConductor(pause_time=2)
 
-        runner = MeowRunner(monitor, handler, conductor)
+        runner = MeowRunner(monitor, handler, conductor, 
+                            job_queue_dir=TEST_JOB_QUEUE, job_output_dir=TEST_JOB_OUTPUT)
                 
         runner.start()
 
