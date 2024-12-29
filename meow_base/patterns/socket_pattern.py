@@ -66,6 +66,8 @@ class SocketEventPattern(BasePattern):
     # Consider deleting this for now
     triggering_msg: Any
 
+    # Triggering protocol
+
     def __init__(self, name:str, triggering_addr:str,
                  triggering_port:int, recipe:str, triggering_msg: Any, 
                  parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},sweep:Dict[str,Any]={},
@@ -82,7 +84,12 @@ class SocketEventPattern(BasePattern):
 
     # TODO: validate the address; should probably be a regular expression
     def _is_valid_address(self, triggering_addr:str)->None:
-        pass
+        try:
+            re.compile(triggering_addr)
+        except re.error:
+            raise ValueError (
+                f"Address '{triggering_addr}' is not a valid regular expression."
+            )
 
     def _is_valid_port(self, triggering_port:int)->None:
         if not isinstance(triggering_port, int):

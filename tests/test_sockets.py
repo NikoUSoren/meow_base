@@ -107,6 +107,10 @@ class SocketEventPatternTests(unittest.TestCase):
     def testSocketEventPatternCreationInvalidPort(self)->None:
         with self.assertRaises(ValueError):
             SocketEventPattern("name", TEST_SERVER, -1, "recipe", "msg")
+
+    def testSocketEventPatternCreationInvalidAddr(self)->None:
+        with self.assertRaises(ValueError):
+            SocketEventPattern("name", "[", TEST_PORT, "recipe", "msg")
     
     # TODO: Invalid message?
 
