@@ -37,6 +37,10 @@ from ..patterns.file_event_pattern import create_watchdog_event
 # TODO: create socket file event (using watchdog probably)
 def create_socket_event(temp_path:str, rule:Any, base:str, time:float, 
                         extras:Dict[Any,Any]={})->Dict[Any,Any]:
+    # file_hash = get_hash(temp_path, SHA256)
+    with open(temp_path, "rb") as f:
+        print(f"creating event with file {temp_path} with content:")
+        print(f.read())
     with open(temp_path, "rb") as file_pointer:
         file_hash = hashlib.sha256(file_pointer.read()).hexdigest()
 
@@ -156,6 +160,8 @@ class SocketEventPattern(BasePattern):
 class SocketEventMonitor(BaseMonitor):
     # Directory for temporary files
     tmpfile_dir: str
+    # List of temporary files
+    tmpfiles: List[str]
     # Port monitered
     port: int
     # Socket connected to monitored port
@@ -171,6 +177,7 @@ class SocketEventMonitor(BaseMonitor):
         super().__init__(patterns, recipes, name=name)
         self._is_valid_tempfile_dir(tmpfile_dir)
         self.tmpfile_dir = tmpfile_dir
+        self.tmpfiles = []
         self._is_valid_port(port)
         self.port = port
         self._running = False
@@ -225,6 +232,7 @@ class SocketEventMonitor(BaseMonitor):
     
     # TODO: given an event, determine a match based on patterns; send event to runner
     def match(self, msg, addr):
+        print(msg)
         for rule in self._rules.values():
            # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
@@ -232,7 +240,24 @@ class SocketEventMonitor(BaseMonitor):
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
-                tmp_file.write(msg)
+                #print("BEFORE WRITING:")
+
+                print(f"DOES THE TMP FILE EXIST? {os.path.exists(tmp_file.name)}")
+
+                with open(tmp_file.name, "rb") as f:
+                    print("BEFORE WRITING:")
+                    print(f.read())
+            
+                with open(tmp_file.name, "wb") as f:
+                    f.write(msg)
+                    f.close()
+                
+                with open(tmp_file.name, "rb") as f:
+                    print("AFTER WRITING:")
+                    print(f.read())
+
+                #print("AFTER WRITING:")
+                #print(tmp_file.read())
 
                 meow_event = create_socket_event(
                     tmp_file.name, rule, self.tmpfile_dir, time()
