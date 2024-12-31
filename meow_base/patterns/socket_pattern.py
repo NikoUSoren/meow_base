@@ -163,27 +163,34 @@ class SocketEventMonitor(BaseMonitor):
     # List of temporary files
     tmpfiles: List[str]
     # Port monitered
-    port: int
+    ports: List[int]
     # Socket connected to monitored port
-    monitered_socket: socket.socket
+    monitered_sockets: List[socket.socket]
     # Boolean to determine the status of the monitor
     _running: bool
     # List of connections
     connected_sockets: list[socket.socket]
 
     def __init__(self, tmpfile_dir:str, patterns:Dict[str,SocketEventPattern], 
-                 recipes:Dict[str,BaseRecipe],port:int, autostart=False,
+                 recipes:Dict[str,BaseRecipe],ports:Union[int, List[int]], autostart=False,
                  name:str="")->None: # TODO: print, logging for debugging
         super().__init__(patterns, recipes, name=name)
         self._is_valid_tempfile_dir(tmpfile_dir)
         self.tmpfile_dir = tmpfile_dir
         self.tmpfiles = []
-        self._is_valid_port(port)
-        self.port = port
+        self._is_valid_port(ports)
+        if not type(ports) == list:
+            ports = [ports]
+        self.ports = ports
         self._running = False
         self.connected_sockets = []
-        self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.monitered_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.monitered_sockets = []
+        for port in self.ports:
+            new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            new_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.monitered_sockets.append(new_socket)
+        #self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #self.monitered_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         if autostart:
             self.start()
@@ -191,17 +198,25 @@ class SocketEventMonitor(BaseMonitor):
     # start monitoring the system, handle any connections
     def start(self):
         if not self._running:
-            threading.Thread(target=self.main_loop).start()
+            self._running = True
+            for i in range(len(self.ports)):
+                print(f"binding to {self.ports[i]}")
+                self.monitered_sockets[i].bind((SERVER, self.ports[i]))
+                self.monitered_sockets[i].listen(1)
+                print("bind and listen good")
+                threading.Thread(
+                    target=self.main_loop,
+                    args=(i,)
+                ).start()
 
     # handle incoming connections/messages
-    def main_loop(self):
-        print(f"binding to {self.port}")
-        self.monitered_socket.bind((SERVER, self.port))
-        self.monitered_socket.listen(1)
-        print("bind and listen good")
-        self._running = True
+    def main_loop(self, i):
+        #print(f"binding to {self.port}")
+        #self.monitered_socket.bind((SERVER, self.port))
+        #self.monitered_socket.listen(1)
+        #print("bind and listen good")
         while self._running:
-            conn, addr = self.monitered_socket.accept()
+            conn, addr = self.monitered_sockets[i].accept()
             self.connected_sockets.append(conn)
             threading.Thread(
                 target=self.handle_connection,
@@ -225,10 +240,12 @@ class SocketEventMonitor(BaseMonitor):
             conn.close()
         '''
         self._running = False
-        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, self.port))
-        print(f"closing {self.port}")
-        self.monitered_socket.close()
-        print("closed good")
+        for port in self.ports:
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, port))
+            print(f"closing {port}")
+        for sock in self.monitered_sockets:
+            sock.close()
+        print("closed all good")
     
     # TODO: given an event, determine a match based on patterns; send event to runner
     def match(self, msg, addr):
