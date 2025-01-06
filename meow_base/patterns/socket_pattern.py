@@ -11,6 +11,7 @@ from fnmatch import translate
 from re import match
 from time import time, sleep
 from typing import Any, Union, Dict, List, Tuple
+from bs4 import BeautifulSoup
 
 from ..core.base_recipe import BaseRecipe
 from ..core.base_monitor import BaseMonitor
@@ -67,13 +68,15 @@ class SocketEventPattern(BasePattern):
 
     triggering_port: int
 
+    triggering_html: bool
+
     # Consider deleting this for now
     triggering_msg: Any
 
     # Triggering protocol
 
     def __init__(self, name:str, triggering_addr:str,
-                 triggering_port:int, recipe:str, triggering_msg: Any, 
+                 triggering_port:int, recipe:str, triggering_msg: Any, triggering_html:bool=False,
                  parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},sweep:Dict[str,Any]={},
                  notifications:Dict[str,Any]={}, tracing:str=""):
         super().__init__(name, recipe, parameters=parameters, outputs=outputs, 
@@ -84,6 +87,7 @@ class SocketEventPattern(BasePattern):
         self.triggering_port = triggering_port
         self._is_valid_message(triggering_msg)
         self.triggering_msg = triggering_msg
+        self.triggering_html = triggering_html
         # possible TODO: validate and assign any potential event mask
 
     # TODO: validate the address; should probably be a regular expression
@@ -253,7 +257,10 @@ class SocketEventMonitor(BaseMonitor):
         for rule in self._rules.values():
            # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
-           if matched_addr:
+           protocol_bool = (not rule.pattern.triggering_html) or \
+             (rule.pattern.triggering_html and self.HTML_validator(str(msg)))
+           print(f"the addr[1] is {addr[1]}")
+           if matched_addr and protocol_bool: #and addr[1] == rule.pattern.triggering_port:
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
@@ -306,3 +313,7 @@ class SocketEventMonitor(BaseMonitor):
     
     def _get_valid_recipe_types(self)->List[type]:
         return [BaseRecipe]
+
+    def HTML_validator(self, msg: str):
+        soup = BeautifulSoup(msg, 'html.parser')
+        return msg == str(soup) # TODO: correct?

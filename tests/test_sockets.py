@@ -344,7 +344,96 @@ class SocketEventMonitorTests(unittest.TestCase):
         self.assertTrue(os.path.exists(event[EVENT_PATH]))
         
         sm.stop()
+    
+    def testSocketMonitorHTMLValidation(self)->None:
+        from_monitor_reader, from_monitor_writer = Pipe()
 
+        pattern_one = SocketEventPattern(
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_html=True)
+        recipe = JupyterNotebookRecipe(
+            "recipe_one", BAREBONES_NOTEBOOK)
+        
+        patterns = {
+            pattern_one.name: pattern_one,
+        }
+        recipes = {
+            recipe.name: recipe,
+        }
+
+        sm = SocketEventMonitor(
+            TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
+        sm.to_runner_event = from_monitor_writer
+
+        sm.start()
+
+        while not sm._running:
+            sleep(1)
+
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.connect((TEST_SERVER, TEST_PORT))
+
+        test_socket.sendall(b'<html></html>')
+        test_socket.close()
+
+        if from_monitor_reader.poll(3):
+            event_message = from_monitor_reader.recv()
+        else:
+            event_message = None
+
+        self.assertIsNotNone(event_message)
+        event = event_message
+        self.assertIsNotNone(event)
+        self.assertEqual(type(event), dict)
+        self.assertTrue(EVENT_TYPE in event.keys())
+        self.assertTrue(EVENT_PATH in event.keys())
+        self.assertTrue(WATCHDOG_BASE in event.keys())
+        self.assertTrue(EVENT_RULE in event.keys())
+        self.assertEqual(event[EVENT_TYPE], EVENT_TYPE_WATCHDOG)
+        # TODO: event path; don't have access to tmp file
+        self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
+        # TODO: rule name?
+        self.assertTrue(os.path.exists(event[EVENT_PATH]))
+
+        sm.stop()
+    
+    def testSocketMonitorHTMLValidationInvalid(self)->None:
+        from_monitor_reader, from_monitor_writer = Pipe()
+
+        pattern_one = SocketEventPattern(
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_html=True)
+        recipe = JupyterNotebookRecipe(
+            "recipe_one", BAREBONES_NOTEBOOK)
+        
+        patterns = {
+            pattern_one.name: pattern_one,
+        }
+        recipes = {
+            recipe.name: recipe,
+        }
+
+        sm = SocketEventMonitor(
+            TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
+        sm.to_runner_event = from_monitor_writer
+
+        sm.start()
+
+        while not sm._running:
+            sleep(1)
+
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.connect((TEST_SERVER, TEST_PORT))
+
+        test_socket.sendall(b'<html>')
+        test_socket.close()
+
+        if from_monitor_reader.poll(3):
+            event_message = from_monitor_reader.recv()
+        else:
+            event_message = None
+
+        self.assertIsNone(event_message)
+
+        sm.stop()
 
 class SocketEventTests(unittest.TestCase):
     def setUp(self)->None:
