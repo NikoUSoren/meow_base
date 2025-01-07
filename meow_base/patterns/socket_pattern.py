@@ -35,6 +35,14 @@ SERVER = socket.gethostbyname(socket.gethostname())
 # TODO: double check; may need to import more
 from ..patterns.file_event_pattern import create_watchdog_event
 
+# Message formats
+HTML = "html"
+NONE = "none"
+MSG_FORMATS = [
+    HTML,
+    NONE
+]
+
 # TODO: create socket file event (using watchdog probably)
 def create_socket_event(temp_path:str, rule:Any, base:str, time:float, 
                         extras:Dict[Any,Any]={})->Dict[Any,Any]:
@@ -66,29 +74,31 @@ def valid_socket_event(event):
 class SocketEventPattern(BasePattern):
     triggering_addr: str
 
-    triggering_port: int
+    triggering_ports: List[int]
 
-    triggering_html: bool
+    triggering_format: str # TODO: expand this
 
     # Consider deleting this for now
     triggering_msg: Any
 
     # Triggering protocol
 
-    def __init__(self, name:str, triggering_addr:str,
-                 triggering_port:int, recipe:str, triggering_msg: Any, triggering_html:bool=False,
-                 parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},sweep:Dict[str,Any]={},
-                 notifications:Dict[str,Any]={}, tracing:str=""):
+    def __init__(self, name:str, triggering_addr:str, triggering_ports:Union[int, List[int]], 
+                 recipe:str, triggering_msg: Any, triggering_format:str=NONE, 
+                 parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},
+                 sweep:Dict[str,Any]={},notifications:Dict[str,Any]={}, tracing:str=""):
         super().__init__(name, recipe, parameters=parameters, outputs=outputs, 
             sweep=sweep, notifications=notifications, tracing=tracing)
         self._is_valid_address(triggering_addr)
         self.triggering_addr = triggering_addr
-        self._is_valid_port(triggering_port)
-        self.triggering_port = triggering_port
+        if not type(triggering_ports) == list:
+            triggering_ports = [triggering_ports]
+        self._is_valid_port(triggering_ports)
+        self.triggering_ports = triggering_ports
         self._is_valid_message(triggering_msg)
         self.triggering_msg = triggering_msg
-        self.triggering_html = triggering_html
-        # possible TODO: validate and assign any potential event mask
+        self._is_valid_format(triggering_format)
+        self.triggering_format = triggering_format
 
     # TODO: validate the address; should probably be a regular expression
     def _is_valid_address(self, triggering_addr:str)->None:
@@ -99,15 +109,16 @@ class SocketEventPattern(BasePattern):
                 f"Address '{triggering_addr}' is not a valid regular expression."
             )
 
-    def _is_valid_port(self, triggering_port:int)->None:
-        if not isinstance(triggering_port, int):
-            raise ValueError (
-                f"Port '{triggering_port}' is not of type int."
-            )
-        elif not (1023 < triggering_port < 49152):
-            raise ValueError (
-                f"Port '{triggering_port}' is not valid."
-            )
+    def _is_valid_port(self, triggering_ports:List[int])->None:
+        for port in triggering_ports:
+            if not isinstance(port, int):
+                raise ValueError (
+                    f"Port '{port}' is not of type int."
+                )
+            elif not (1023 < port < 49152):
+                raise ValueError (
+                    f"Port '{port}' is not valid."
+                )
 
     # TODO: validate the message
     def _is_valid_message(self, triggering_msg:Any)->None:
@@ -120,6 +131,11 @@ class SocketEventPattern(BasePattern):
             hint="SocketEventPattern.recipe"
         )
     
+    def _is_valid_format(self, format:str)->None:
+        if format not in MSG_FORMATS:
+            raise ValueError(f"Invalid format '{format}'. Valid are: "
+                            f"{MSG_FORMATS}")
+
     def _is_valid_parameters(self, parameters:Dict[str,Any])->None:
         valid_dict(
             parameters, 
@@ -224,17 +240,17 @@ class SocketEventMonitor(BaseMonitor):
             self.connected_sockets.append(conn)
             threading.Thread(
                 target=self.handle_connection,
-                args=(conn, addr)
+                args=(conn, addr, i)
             ).start()
 
     # handle the actual connection, read the message
-    def handle_connection(self, conn, addr):
+    def handle_connection(self, conn, addr, i):
         with conn:
             while self._running:
                 msg = conn.recv(1024)
                 if not msg:
                     return
-                self.match(msg, addr)
+                self.match(msg, addr, i)
 
     # stop the system monitoring
     def stop(self):
@@ -252,15 +268,16 @@ class SocketEventMonitor(BaseMonitor):
         print("closed all good")
     
     # TODO: given an event, determine a match based on patterns; send event to runner
-    def match(self, msg, addr):
+    def match(self, msg, addr, i):
         print(msg)
         for rule in self._rules.values():
            # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
-           protocol_bool = (not rule.pattern.triggering_html) or \
-             (rule.pattern.triggering_html and self.HTML_validator(str(msg)))
-           print(f"the addr[1] is {addr[1]}")
-           if matched_addr and protocol_bool: #and addr[1] == rule.pattern.triggering_port:
+           matched_format = self.format_check(rule, msg)
+           # print(f"the addr[1] is {addr[1]}")
+           print(f"The port receiving is {self.ports[i]}")
+           matched_port = self.ports[i] in rule.pattern.triggering_ports
+           if matched_addr and matched_port and matched_format:
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
@@ -288,6 +305,13 @@ class SocketEventMonitor(BaseMonitor):
                 )   
                 self.send_event_to_runner(meow_event)
 
+
+    def format_check(self, rule, msg)->bool:
+        match rule.pattern.triggering_format:
+            case "html":
+                return self.HTML_validator(str(msg))
+            case _:
+                return True
 
     def _is_valid_tempfile_dir(self, tmpfile_dir):
         valid_dir_path(tmpfile_dir, must_exist=True)
