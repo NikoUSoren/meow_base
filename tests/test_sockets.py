@@ -113,7 +113,16 @@ class SocketEventPatternTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SocketEventPattern("name", "[", TEST_PORT, "recipe", "msg")
     
-    # TODO: Invalid message?
+    # Test SocketEventPattern not created with invalid format
+    def testSocketEventPatternCreationInvalidFormat(self)->None:
+        with self.assertRaises(ValueError):
+            SocketEventPattern(
+                "name", 
+                TEST_SERVER, 
+                TEST_PORT, 
+                "recipe", 
+                "msg", 
+                triggering_format="notrealformat")
 
     # Test SocketEventPattern created with valid name
     def testSocketEventPatternSetupName(self)->None:
@@ -445,7 +454,7 @@ class SocketEventMonitorTests(unittest.TestCase):
         from_monitor_reader, from_monitor_writer = Pipe()
 
         pattern_one = SocketEventPattern(
-            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_html=True)
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_format="html")
         recipe = JupyterNotebookRecipe(
             "recipe_one", BAREBONES_NOTEBOOK)
         
@@ -496,7 +505,7 @@ class SocketEventMonitorTests(unittest.TestCase):
         from_monitor_reader, from_monitor_writer = Pipe()
 
         pattern_one = SocketEventPattern(
-            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_html=True)
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_format="html")
         recipe = JupyterNotebookRecipe(
             "recipe_one", BAREBONES_NOTEBOOK)
         

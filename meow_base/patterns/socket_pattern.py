@@ -35,6 +35,14 @@ SERVER = socket.gethostbyname(socket.gethostname())
 # TODO: double check; may need to import more
 from ..patterns.file_event_pattern import create_watchdog_event
 
+# Message formats
+HTML = "html"
+NONE = "none"
+MSG_FORMATS = [
+    HTML,
+    NONE
+]
+
 # TODO: create socket file event (using watchdog probably)
 def create_socket_event(temp_path:str, rule:Any, base:str, time:float, 
                         extras:Dict[Any,Any]={})->Dict[Any,Any]:
@@ -68,16 +76,16 @@ class SocketEventPattern(BasePattern):
 
     triggering_ports: List[int]
 
-    triggering_html: bool # TODO: expand this
+    triggering_format: str # TODO: expand this
 
     # Consider deleting this for now
     triggering_msg: Any
 
     # Triggering protocol
 
-    def __init__(self, name:str, triggering_addr:str,
-                 triggering_ports:Union[int, List[int]], recipe:str, triggering_msg: Any, 
-                 triggering_html:bool=False, parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},
+    def __init__(self, name:str, triggering_addr:str, triggering_ports:Union[int, List[int]], 
+                 recipe:str, triggering_msg: Any, triggering_format:str=NONE, 
+                 parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},
                  sweep:Dict[str,Any]={},notifications:Dict[str,Any]={}, tracing:str=""):
         super().__init__(name, recipe, parameters=parameters, outputs=outputs, 
             sweep=sweep, notifications=notifications, tracing=tracing)
@@ -89,8 +97,8 @@ class SocketEventPattern(BasePattern):
         self.triggering_ports = triggering_ports
         self._is_valid_message(triggering_msg)
         self.triggering_msg = triggering_msg
-        self.triggering_html = triggering_html
-        # possible TODO: validate and assign any potential event mask
+        self._is_valid_format(triggering_format)
+        self.triggering_format = triggering_format
 
     # TODO: validate the address; should probably be a regular expression
     def _is_valid_address(self, triggering_addr:str)->None:
@@ -123,6 +131,11 @@ class SocketEventPattern(BasePattern):
             hint="SocketEventPattern.recipe"
         )
     
+    def _is_valid_format(self, format:str)->None:
+        if format not in MSG_FORMATS:
+            raise ValueError(f"Invalid format '{format}'. Valid are: "
+                            f"{MSG_FORMATS}")
+
     def _is_valid_parameters(self, parameters:Dict[str,Any])->None:
         valid_dict(
             parameters, 
@@ -260,12 +273,11 @@ class SocketEventMonitor(BaseMonitor):
         for rule in self._rules.values():
            # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
-           protocol_bool = (not rule.pattern.triggering_html) or \
-             (rule.pattern.triggering_html and self.HTML_validator(str(msg)))
+           matched_format = self.format_check(rule, msg)
            # print(f"the addr[1] is {addr[1]}")
            print(f"The port receiving is {self.ports[i]}")
            matched_port = self.ports[i] in rule.pattern.triggering_ports
-           if matched_addr and matched_port and protocol_bool:
+           if matched_addr and matched_port and matched_format:
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
@@ -293,6 +305,13 @@ class SocketEventMonitor(BaseMonitor):
                 )   
                 self.send_event_to_runner(meow_event)
 
+
+    def format_check(self, rule, msg)->bool:
+        match rule.pattern.triggering_format:
+            case "html":
+                return self.HTML_validator(str(msg))
+            case _:
+                return True
 
     def _is_valid_tempfile_dir(self, tmpfile_dir):
         valid_dir_path(tmpfile_dir, must_exist=True)
