@@ -66,9 +66,9 @@ def valid_socket_event(event):
 class SocketEventPattern(BasePattern):
     triggering_addr: str
 
-    triggering_port: int
+    triggering_ports: List[int]
 
-    triggering_html: bool
+    triggering_html: bool # TODO: expand this
 
     # Consider deleting this for now
     triggering_msg: Any
@@ -76,15 +76,17 @@ class SocketEventPattern(BasePattern):
     # Triggering protocol
 
     def __init__(self, name:str, triggering_addr:str,
-                 triggering_port:int, recipe:str, triggering_msg: Any, triggering_html:bool=False,
-                 parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},sweep:Dict[str,Any]={},
-                 notifications:Dict[str,Any]={}, tracing:str=""):
+                 triggering_ports:Union[int, List[int]], recipe:str, triggering_msg: Any, 
+                 triggering_html:bool=False, parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},
+                 sweep:Dict[str,Any]={},notifications:Dict[str,Any]={}, tracing:str=""):
         super().__init__(name, recipe, parameters=parameters, outputs=outputs, 
             sweep=sweep, notifications=notifications, tracing=tracing)
         self._is_valid_address(triggering_addr)
         self.triggering_addr = triggering_addr
-        self._is_valid_port(triggering_port)
-        self.triggering_port = triggering_port
+        if not type(triggering_ports) == list:
+            triggering_ports = [triggering_ports]
+        self._is_valid_port(triggering_ports)
+        self.triggering_ports = triggering_ports
         self._is_valid_message(triggering_msg)
         self.triggering_msg = triggering_msg
         self.triggering_html = triggering_html
@@ -99,15 +101,16 @@ class SocketEventPattern(BasePattern):
                 f"Address '{triggering_addr}' is not a valid regular expression."
             )
 
-    def _is_valid_port(self, triggering_port:int)->None:
-        if not isinstance(triggering_port, int):
-            raise ValueError (
-                f"Port '{triggering_port}' is not of type int."
-            )
-        elif not (1023 < triggering_port < 49152):
-            raise ValueError (
-                f"Port '{triggering_port}' is not valid."
-            )
+    def _is_valid_port(self, triggering_ports:List[int])->None:
+        for port in triggering_ports:
+            if not isinstance(port, int):
+                raise ValueError (
+                    f"Port '{port}' is not of type int."
+                )
+            elif not (1023 < port < 49152):
+                raise ValueError (
+                    f"Port '{port}' is not valid."
+                )
 
     # TODO: validate the message
     def _is_valid_message(self, triggering_msg:Any)->None:
@@ -224,17 +227,17 @@ class SocketEventMonitor(BaseMonitor):
             self.connected_sockets.append(conn)
             threading.Thread(
                 target=self.handle_connection,
-                args=(conn, addr)
+                args=(conn, addr, i)
             ).start()
 
     # handle the actual connection, read the message
-    def handle_connection(self, conn, addr):
+    def handle_connection(self, conn, addr, i):
         with conn:
             while self._running:
                 msg = conn.recv(1024)
                 if not msg:
                     return
-                self.match(msg, addr)
+                self.match(msg, addr, i)
 
     # stop the system monitoring
     def stop(self):
@@ -252,15 +255,17 @@ class SocketEventMonitor(BaseMonitor):
         print("closed all good")
     
     # TODO: given an event, determine a match based on patterns; send event to runner
-    def match(self, msg, addr):
+    def match(self, msg, addr, i):
         print(msg)
         for rule in self._rules.values():
            # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
            protocol_bool = (not rule.pattern.triggering_html) or \
              (rule.pattern.triggering_html and self.HTML_validator(str(msg)))
-           print(f"the addr[1] is {addr[1]}")
-           if matched_addr and protocol_bool: #and addr[1] == rule.pattern.triggering_port:
+           # print(f"the addr[1] is {addr[1]}")
+           print(f"The port receiving is {self.ports[i]}")
+           matched_port = self.ports[i] in rule.pattern.triggering_ports
+           if matched_addr and matched_port and protocol_bool:
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
