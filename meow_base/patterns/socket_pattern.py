@@ -11,6 +11,7 @@ from fnmatch import translate
 from re import match
 from time import time, sleep
 from typing import Any, Union, Dict, List, Tuple
+from bs4 import BeautifulSoup
 
 from ..core.base_recipe import BaseRecipe
 from ..core.base_monitor import BaseMonitor
@@ -37,6 +38,10 @@ from ..patterns.file_event_pattern import create_watchdog_event
 # TODO: create socket file event (using watchdog probably)
 def create_socket_event(temp_path:str, rule:Any, base:str, time:float, 
                         extras:Dict[Any,Any]={})->Dict[Any,Any]:
+    # file_hash = get_hash(temp_path, SHA256)
+    with open(temp_path, "rb") as f:
+        print(f"creating event with file {temp_path} with content:")
+        print(f.read())
     with open(temp_path, "rb") as file_pointer:
         file_hash = hashlib.sha256(file_pointer.read()).hexdigest()
 
@@ -63,11 +68,15 @@ class SocketEventPattern(BasePattern):
 
     triggering_port: int
 
+    triggering_html: bool
+
     # Consider deleting this for now
     triggering_msg: Any
 
+    # Triggering protocol
+
     def __init__(self, name:str, triggering_addr:str,
-                 triggering_port:int, recipe:str, triggering_msg: Any, 
+                 triggering_port:int, recipe:str, triggering_msg: Any, triggering_html:bool=False,
                  parameters:Dict[str,Any]={}, outputs:Dict[str,Any]={},sweep:Dict[str,Any]={},
                  notifications:Dict[str,Any]={}, tracing:str=""):
         super().__init__(name, recipe, parameters=parameters, outputs=outputs, 
@@ -78,11 +87,17 @@ class SocketEventPattern(BasePattern):
         self.triggering_port = triggering_port
         self._is_valid_message(triggering_msg)
         self.triggering_msg = triggering_msg
+        self.triggering_html = triggering_html
         # possible TODO: validate and assign any potential event mask
 
     # TODO: validate the address; should probably be a regular expression
     def _is_valid_address(self, triggering_addr:str)->None:
-        pass
+        try:
+            re.compile(triggering_addr)
+        except re.error:
+            raise ValueError (
+                f"Address '{triggering_addr}' is not a valid regular expression."
+            )
 
     def _is_valid_port(self, triggering_port:int)->None:
         if not isinstance(triggering_port, int):
@@ -149,26 +164,37 @@ class SocketEventPattern(BasePattern):
 class SocketEventMonitor(BaseMonitor):
     # Directory for temporary files
     tmpfile_dir: str
+    # List of temporary files
+    tmpfiles: List[str]
     # Port monitered
-    port: int
+    ports: List[int]
     # Socket connected to monitored port
-    monitered_socket: socket.socket
+    monitered_sockets: List[socket.socket]
     # Boolean to determine the status of the monitor
     _running: bool
     # List of connections
     connected_sockets: list[socket.socket]
 
     def __init__(self, tmpfile_dir:str, patterns:Dict[str,SocketEventPattern], 
-                 recipes:Dict[str,BaseRecipe],port:int, autostart=False,
+                 recipes:Dict[str,BaseRecipe],ports:Union[int, List[int]], autostart=False,
                  name:str="")->None: # TODO: print, logging for debugging
         super().__init__(patterns, recipes, name=name)
         self._is_valid_tempfile_dir(tmpfile_dir)
         self.tmpfile_dir = tmpfile_dir
-        self._is_valid_port(port)
-        self.port = port
+        self.tmpfiles = []
+        self._is_valid_port(ports)
+        if not type(ports) == list:
+            ports = [ports]
+        self.ports = ports
         self._running = False
         self.connected_sockets = []
-        self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.monitered_sockets = []
+        for port in self.ports:
+            new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            new_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.monitered_sockets.append(new_socket)
+        #self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #self.monitered_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         if autostart:
             self.start()
@@ -176,15 +202,25 @@ class SocketEventMonitor(BaseMonitor):
     # start monitoring the system, handle any connections
     def start(self):
         if not self._running:
-            threading.Thread(target=self.main_loop).start()
+            self._running = True
+            for i in range(len(self.ports)):
+                print(f"binding to {self.ports[i]}")
+                self.monitered_sockets[i].bind((SERVER, self.ports[i]))
+                self.monitered_sockets[i].listen(1)
+                print("bind and listen good")
+                threading.Thread(
+                    target=self.main_loop,
+                    args=(i,)
+                ).start()
 
     # handle incoming connections/messages
-    def main_loop(self):
-        self.monitered_socket.bind((SERVER, self.port))
-        self.monitered_socket.listen(1)
-        self._running = True
+    def main_loop(self, i):
+        #print(f"binding to {self.port}")
+        #self.monitered_socket.bind((SERVER, self.port))
+        #self.monitered_socket.listen(1)
+        #print("bind and listen good")
         while self._running:
-            conn, addr = self.monitered_socket.accept()
+            conn, addr = self.monitered_sockets[i].accept()
             self.connected_sockets.append(conn)
             threading.Thread(
                 target=self.handle_connection,
@@ -208,19 +244,44 @@ class SocketEventMonitor(BaseMonitor):
             conn.close()
         '''
         self._running = False
-        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, self.port))
-        self.monitered_socket.close()
+        for port in self.ports:
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, port))
+            print(f"closing {port}")
+        for sock in self.monitered_sockets:
+            sock.close()
+        print("closed all good")
     
     # TODO: given an event, determine a match based on patterns; send event to runner
     def match(self, msg, addr):
+        print(msg)
         for rule in self._rules.values():
-           print(addr[0])
+           # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
-           if matched_addr:
+           protocol_bool = (not rule.pattern.triggering_html) or \
+             (rule.pattern.triggering_html and self.HTML_validator(str(msg)))
+           print(f"the addr[1] is {addr[1]}")
+           if matched_addr and protocol_bool: #and addr[1] == rule.pattern.triggering_port:
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
-                tmp_file.write(msg)
+                #print("BEFORE WRITING:")
+
+                print(f"DOES THE TMP FILE EXIST? {os.path.exists(tmp_file.name)}")
+
+                with open(tmp_file.name, "rb") as f:
+                    print("BEFORE WRITING:")
+                    print(f.read())
+            
+                with open(tmp_file.name, "wb") as f:
+                    f.write(msg)
+                    f.close()
+                
+                with open(tmp_file.name, "rb") as f:
+                    print("AFTER WRITING:")
+                    print(f.read())
+
+                #print("AFTER WRITING:")
+                #print(tmp_file.read())
 
                 meow_event = create_socket_event(
                     tmp_file.name, rule, self.tmpfile_dir, time()
@@ -252,3 +313,7 @@ class SocketEventMonitor(BaseMonitor):
     
     def _get_valid_recipe_types(self)->List[type]:
         return [BaseRecipe]
+
+    def HTML_validator(self, msg: str):
+        soup = BeautifulSoup(msg, 'html.parser')
+        return msg == str(soup) # TODO: correct?

@@ -9,9 +9,9 @@ from time import sleep, time
 from watchdog.events import FileSystemEvent
 
 from ..meow_base.core.vars import FILE_CREATE_EVENT, EVENT_TYPE, \
-    EVENT_RULE, EVENT_PATH, SWEEP_START, \
-    SWEEP_JUMP, SWEEP_STOP, DIR_EVENTS
-from ..meow_base.functionality.file_io import make_dir
+    EVENT_RULE, EVENT_PATH, SWEEP_START, META_FILE, \
+    SWEEP_JUMP, SWEEP_STOP, DIR_EVENTS, JOB_ERROR
+from ..meow_base.functionality.file_io import make_dir, read_yaml
 from ..meow_base.functionality.meow import create_rule, assemble_patterns_dict, \
     assemble_recipes_dict
 from ..meow_base.patterns.file_event_pattern import FileEventPattern, \
@@ -27,7 +27,11 @@ from ..meow_base.recipes.python_recipe import PythonRecipe
 from .shared import SharedTestPattern, SharedTestRecipe, \
     BAREBONES_NOTEBOOK, TEST_MONITOR_BASE, COUNTING_PYTHON_SCRIPT, \
     APPENDING_NOTEBOOK, setup, teardown, check_port_in_use, \
-    check_shutdown_port_in_timeout
+    check_shutdown_port_in_timeout, TEST_JOB_QUEUE, TEST_JOB_OUTPUT, \
+    BAREBONES_PYTHON_SCRIPT, COMPLETE_PYTHON_SCRIPT
+from ..meow_base.conductors import LocalPythonConductor
+from ..meow_base.recipes.python_recipe import PythonHandler, PythonRecipe
+from ..meow_base.core.runner import MeowRunner
 
 HEADER_LENGTH = 64
 TEST_PORT = 8080
@@ -104,6 +108,10 @@ class SocketEventPatternTests(unittest.TestCase):
     def testSocketEventPatternCreationInvalidPort(self)->None:
         with self.assertRaises(ValueError):
             SocketEventPattern("name", TEST_SERVER, -1, "recipe", "msg")
+
+    def testSocketEventPatternCreationInvalidAddr(self)->None:
+        with self.assertRaises(ValueError):
+            SocketEventPattern("name", "[", TEST_PORT, "recipe", "msg")
     
     # TODO: Invalid message?
 
@@ -333,5 +341,196 @@ class SocketEventMonitorTests(unittest.TestCase):
         # TODO: event path; don't have access to tmp file
         self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
         # TODO: rule name?
+        self.assertTrue(os.path.exists(event[EVENT_PATH]))
         
         sm.stop()
+    
+    def testSocketMonitorHTMLValidation(self)->None:
+        from_monitor_reader, from_monitor_writer = Pipe()
+
+        pattern_one = SocketEventPattern(
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_html=True)
+        recipe = JupyterNotebookRecipe(
+            "recipe_one", BAREBONES_NOTEBOOK)
+        
+        patterns = {
+            pattern_one.name: pattern_one,
+        }
+        recipes = {
+            recipe.name: recipe,
+        }
+
+        sm = SocketEventMonitor(
+            TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
+        sm.to_runner_event = from_monitor_writer
+
+        sm.start()
+
+        while not sm._running:
+            sleep(1)
+
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.connect((TEST_SERVER, TEST_PORT))
+
+        test_socket.sendall(b'<html></html>')
+        test_socket.close()
+
+        if from_monitor_reader.poll(3):
+            event_message = from_monitor_reader.recv()
+        else:
+            event_message = None
+
+        self.assertIsNotNone(event_message)
+        event = event_message
+        self.assertIsNotNone(event)
+        self.assertEqual(type(event), dict)
+        self.assertTrue(EVENT_TYPE in event.keys())
+        self.assertTrue(EVENT_PATH in event.keys())
+        self.assertTrue(WATCHDOG_BASE in event.keys())
+        self.assertTrue(EVENT_RULE in event.keys())
+        self.assertEqual(event[EVENT_TYPE], EVENT_TYPE_WATCHDOG)
+        # TODO: event path; don't have access to tmp file
+        self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
+        # TODO: rule name?
+        self.assertTrue(os.path.exists(event[EVENT_PATH]))
+
+        sm.stop()
+    
+    def testSocketMonitorHTMLValidationInvalid(self)->None:
+        from_monitor_reader, from_monitor_writer = Pipe()
+
+        pattern_one = SocketEventPattern(
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one", triggering_html=True)
+        recipe = JupyterNotebookRecipe(
+            "recipe_one", BAREBONES_NOTEBOOK)
+        
+        patterns = {
+            pattern_one.name: pattern_one,
+        }
+        recipes = {
+            recipe.name: recipe,
+        }
+
+        sm = SocketEventMonitor(
+            TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
+        sm.to_runner_event = from_monitor_writer
+
+        sm.start()
+
+        while not sm._running:
+            sleep(1)
+
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.connect((TEST_SERVER, TEST_PORT))
+
+        test_socket.sendall(b'<html>')
+        test_socket.close()
+
+        if from_monitor_reader.poll(3):
+            event_message = from_monitor_reader.recv()
+        else:
+            event_message = None
+
+        self.assertIsNone(event_message)
+
+        sm.stop()
+
+class SocketEventTests(unittest.TestCase):
+    def setUp(self)->None:
+        super().setUp()
+        setup()
+
+    def tearDown(self)->None:
+        super().tearDown()
+        teardown()
+
+    def testMeowRunnerSetup(self)->None:
+        monitor = SocketEventMonitor(TEST_MONITOR_BASE, {}, {}, TEST_PORT)
+
+        handler = PythonHandler(pause_time=0)
+
+        conductor = LocalPythonConductor(pause_time=0)
+
+        runner = MeowRunner(monitor, handler, conductor)
+
+        # TODO: assert the monitor is correct type
+    
+    def testPythonExecution(self)->None:
+        pattern_one = SocketEventPattern(
+            "pattern_one", "(.*)", TEST_PORT, "recipe_one", "message_one")
+        recipe = PythonRecipe(
+            "recipe_one", BAREBONES_PYTHON_SCRIPT)
+        
+        patterns = {
+            pattern_one.name: pattern_one,
+        }
+        recipes = {
+            recipe.name: recipe,
+        }
+
+        monitor = SocketEventMonitor(TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
+
+        handler = PythonHandler(job_queue_dir=TEST_JOB_QUEUE)
+
+        conductor = LocalPythonConductor(pause_time=2)
+
+        runner = MeowRunner(monitor, handler, conductor, 
+                            job_queue_dir=TEST_JOB_QUEUE, job_output_dir=TEST_JOB_OUTPUT)
+
+        conductor_to_test_conductor, conductor_to_test_test = Pipe(duplex=True)
+        test_to_runner_runner, test_to_runner_test = Pipe(duplex=True)
+
+        runner.conductors[0].to_runner_job = conductor_to_test_conductor
+
+        for i in range(len(runner.job_connections)):
+            _, obj = runner.job_connections[i]
+
+            if obj == runner.conductors[0]:
+                runner.job_connections[i] = (test_to_runner_runner, runner.job_connections[i][1])
+                
+        runner.start()
+
+        test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        test_socket.connect((TEST_SERVER, TEST_PORT))
+        test_socket.sendall(b'test')
+        test_socket.close()
+
+        loops = 0
+        while loops < 5:
+            # Initial prompt
+            if conductor_to_test_test.poll(5):
+                msg = conductor_to_test_test.recv()
+            else:
+                raise Exception("Timed out")        
+            self.assertEqual(msg, 1)
+            test_to_runner_test.send(msg)
+
+            # Reply
+            if test_to_runner_test.poll(5):
+                msg = test_to_runner_test.recv()
+            else:
+                raise Exception("Timed out")        
+            job_dir = msg
+            conductor_to_test_test.send(msg)
+
+            if isinstance(job_dir, str):
+                # Prompt again once complete
+                if conductor_to_test_test.poll(5):
+                    msg = conductor_to_test_test.recv()
+                else:
+                    raise Exception("Timed out")        
+                self.assertEqual(msg, 1)
+                loops = 5
+            
+            loops += 1
+
+        job_dir = job_dir.replace(TEST_JOB_QUEUE, TEST_JOB_OUTPUT)
+        self.assertTrue(os.path.exists(job_dir))
+
+        runner.stop()
+
+        metafile = os.path.join(job_dir, META_FILE)
+        status = read_yaml(metafile)
+
+        # print(status['error'])
+        self.assertNotIn(JOB_ERROR, status)
