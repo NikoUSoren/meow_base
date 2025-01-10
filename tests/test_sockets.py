@@ -3,6 +3,7 @@ import os
 import socket
 import tempfile
 import unittest
+import warnings
 
 from multiprocessing import Pipe
 from time import sleep, time
@@ -131,14 +132,18 @@ class SocketEventPatternTests(unittest.TestCase):
         self.assertEqual(sep.name, name)
 
     # Test SocketEventPattern created with valid port
-    def testFileEventPatternSetupPort(self)->None:
+    def testSocketEventPatternSetupPort(self)->None:
         sep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, "recipe", "file")
         self.assertEqual(sep.triggering_ports, [TEST_PORT])
     
-    def testFileEventPatternSetupPortList(self)->None:
+    def testSocketEventPatternSetupPortList(self)->None:
         port_list = [TEST_PORT, TEST_PORT + 1]
         sep = SocketEventPattern("name", TEST_SERVER, port_list, "recipe", "file")
         self.assertEqual(sep.triggering_ports, port_list)
+
+    def testSocketEventPatternSetupPortWarning(self)->None:
+        with self.assertWarns(Warning):
+            SocketEventPattern("name", TEST_SERVER, 500, "recipe", "file")
 
     # Test SocketEventPattern created with valid recipe
     def testSocketEventPatternSetupRecipe(self)->None:

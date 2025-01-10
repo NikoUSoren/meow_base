@@ -6,6 +6,7 @@ import socket
 import hashlib
 import tempfile
 import re
+import warnings
 
 from fnmatch import translate
 from re import match
@@ -115,10 +116,12 @@ class SocketEventPattern(BasePattern):
                 raise ValueError (
                     f"Port '{port}' is not of type int."
                 )
-            elif not (1023 < port < 49152):
+            elif not (0 < port < 65535):
                 raise ValueError (
                     f"Port '{port}' is not valid."
                 )
+            elif port <= 1024:
+                warnings.warn(f"Port '{port}' is using a reserved port.")
 
     # TODO: validate the message
     def _is_valid_message(self, triggering_msg:Any)->None:
