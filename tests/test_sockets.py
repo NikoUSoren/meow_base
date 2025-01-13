@@ -1,3 +1,12 @@
+
+"""
+This file contains tests for the implementation of network events
+in the MEOW framework. See the file socket_pattern.py for details
+regarding this implementation.
+
+Author(s): Nikolaj Sørensen
+"""
+
 import io
 import os
 import socket
@@ -86,14 +95,10 @@ class SocketEventPatternTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SocketEventPattern("", TEST_SERVER, TEST_PORT, "recipe", "msg")
 
-    # Testing empty port? Does this even make sense (no)
-
     # Test SocketEventPattern not created with empty recipe
     def testSocketPatternCreationEmptyRecipe(self)->None:
         with self.assertRaises(ValueError):
             SocketEventPattern("name", TEST_SERVER, TEST_PORT, "", "msg")
-
-    # Empty file? Empty Message? You can send an empty message just fine, so probably not
 
     # Test SocketEventPattern not created with invalid name
     def testSocketEventPatternCreationInvalidName(self)->None:
@@ -151,8 +156,6 @@ class SocketEventPatternTests(unittest.TestCase):
         sep = SocketEventPattern("name", TEST_SERVER, TEST_PORT, recipe, "msg")
         self.assertEqual(sep.recipe, recipe)
 
-    # TODO: SetupMsg
-
     # SetupParamenters
     def testSocketEventPatternSetupParementers(self)->None:
         parameters = {
@@ -172,8 +175,6 @@ class SocketEventPatternTests(unittest.TestCase):
         sep = SocketEventPattern(
             "name", TEST_SERVER, TEST_PORT, "recipe", "msg", outputs=outputs)
         self.assertEqual(sep.outputs, outputs)
-
-    # Event masks?
 
     # Test SocketEventPattern created with valid parameter sweep
     def testSocketEventPatternSweep(self)->None:
@@ -328,6 +329,11 @@ class SocketEventMonitorTests(unittest.TestCase):
             TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
         sm.to_runner_event = from_monitor_writer
 
+        rules = sm.get_rules()
+
+        self.assertEqual(len(rules), 1)
+        rule = rules[list(rules.keys())[0]]
+
         sm.start()
 
         while not sm._running:
@@ -335,11 +341,6 @@ class SocketEventMonitorTests(unittest.TestCase):
         
         test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         test_socket.connect((TEST_SERVER, TEST_PORT))
-        # message = 'test'.encode()
-        # message_header = str(len(message)).encode()
-        # message_header += b' ' * (HEADER_LENGTH - len(message_header))
-        # test_socket.send(message_header)
-        # test_socket.send(message)
         test_socket.sendall(b'test')
         test_socket.close()
 
@@ -357,9 +358,9 @@ class SocketEventMonitorTests(unittest.TestCase):
         self.assertTrue(WATCHDOG_BASE in event.keys())
         self.assertTrue(EVENT_RULE in event.keys())
         self.assertEqual(event[EVENT_TYPE], EVENT_TYPE_WATCHDOG)
-        # TODO: event path; don't have access to tmp file
+        self.assertEqual(event[EVENT_PATH], sm.tmpfiles[0])
         self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
-        # TODO: rule name?
+        self.assertEqual(event[EVENT_RULE].name, rule.name)
         self.assertTrue(os.path.exists(event[EVENT_PATH]))
         
         sm.stop()
@@ -423,6 +424,11 @@ class SocketEventMonitorTests(unittest.TestCase):
             TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
         sm.to_runner_event = from_monitor_writer
 
+        rules = sm.get_rules()
+
+        self.assertEqual(len(rules), 1)
+        rule = rules[list(rules.keys())[0]]
+
         sm.start()
 
         while not sm._running:
@@ -448,9 +454,9 @@ class SocketEventMonitorTests(unittest.TestCase):
         self.assertTrue(WATCHDOG_BASE in event.keys())
         self.assertTrue(EVENT_RULE in event.keys())
         self.assertEqual(event[EVENT_TYPE], EVENT_TYPE_WATCHDOG)
-        # TODO: event path; don't have access to tmp file
+        self.assertEqual(event[EVENT_PATH], sm.tmpfiles[0])
         self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
-        # TODO: rule name?
+        self.assertEqual(event[EVENT_RULE].name, rule.name)
         self.assertTrue(os.path.exists(event[EVENT_PATH]))
 
         sm.stop()
@@ -473,6 +479,11 @@ class SocketEventMonitorTests(unittest.TestCase):
         sm = SocketEventMonitor(
             TEST_MONITOR_BASE, patterns, recipes, TEST_PORT)
         sm.to_runner_event = from_monitor_writer
+
+        rules = sm.get_rules()
+
+        self.assertEqual(len(rules), 1)
+        rule = rules[list(rules.keys())[0]]
 
         sm.start()
 
@@ -499,9 +510,9 @@ class SocketEventMonitorTests(unittest.TestCase):
         self.assertTrue(WATCHDOG_BASE in event.keys())
         self.assertTrue(EVENT_RULE in event.keys())
         self.assertEqual(event[EVENT_TYPE], EVENT_TYPE_WATCHDOG)
-        # TODO: event path; don't have access to tmp file
+        self.assertEqual(event[EVENT_PATH], sm.tmpfiles[0])
         self.assertEqual(event[WATCHDOG_BASE], TEST_MONITOR_BASE)
-        # TODO: rule name?
+        self.assertEqual(event[EVENT_RULE].name, rule.name)
         self.assertTrue(os.path.exists(event[EVENT_PATH]))
 
         sm.stop()
@@ -563,7 +574,9 @@ class SocketEventTests(unittest.TestCase):
 
         runner = MeowRunner(monitor, handler, conductor)
 
-        # TODO: assert the monitor is correct type
+        self.assertIsInstance(runner.monitors, list)
+        for m in runner.monitors:
+            self.assertIsInstance(m, SocketEventMonitor)
     
     def testPythonExecution(self)->None:
         pattern_one = SocketEventPattern(
@@ -642,5 +655,4 @@ class SocketEventTests(unittest.TestCase):
         metafile = os.path.join(job_dir, META_FILE)
         status = read_yaml(metafile)
 
-        # print(status['error'])
         self.assertNotIn(JOB_ERROR, status)

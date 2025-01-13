@@ -1,3 +1,14 @@
+
+"""
+This file contains the implementation of the network events in
+MEOW. Specifically, it contains the functions for creating a socket
+event and validating said events, the socket event pattern class, and
+the socket event monitor class. This implementation was tested in the
+test suite in test_socket.py.
+
+Author(s): Nikolaj Sørensen
+"""
+
 import glob
 import threading
 import sys
@@ -33,7 +44,6 @@ from ..patterns.file_event_pattern import WATCHDOG_EVENT_KEYS
 
 SERVER = socket.gethostbyname(socket.gethostname())
 
-# TODO: double check; may need to import more
 from ..patterns.file_event_pattern import create_watchdog_event
 
 # Message formats
@@ -44,13 +54,8 @@ MSG_FORMATS = [
     NONE
 ]
 
-# TODO: create socket file event (using watchdog probably)
 def create_socket_event(temp_path:str, rule:Any, base:str, time:float, 
                         extras:Dict[Any,Any]={})->Dict[Any,Any]:
-    # file_hash = get_hash(temp_path, SHA256)
-    with open(temp_path, "rb") as f:
-        print(f"creating event with file {temp_path} with content:")
-        print(f.read())
     with open(temp_path, "rb") as file_pointer:
         file_hash = hashlib.sha256(file_pointer.read()).hexdigest()
 
@@ -62,7 +67,7 @@ def create_socket_event(temp_path:str, rule:Any, base:str, time:float,
     return create_watchdog_event(
         temp_path[temp_path.index(base):], 
         rule, 
-        base,#tempfile.gettempdir(), 
+        base,
         time, 
         file_hash, 
         extras=extras
@@ -77,12 +82,9 @@ class SocketEventPattern(BasePattern):
 
     triggering_ports: List[int]
 
-    triggering_format: str # TODO: expand this
+    triggering_format: str
 
-    # Consider deleting this for now
     triggering_msg: Any
-
-    # Triggering protocol
 
     def __init__(self, name:str, triggering_addr:str, triggering_ports:Union[int, List[int]], 
                  recipe:str, triggering_msg: Any, triggering_format:str=NONE, 
@@ -101,7 +103,6 @@ class SocketEventPattern(BasePattern):
         self._is_valid_format(triggering_format)
         self.triggering_format = triggering_format
 
-    # TODO: validate the address; should probably be a regular expression
     def _is_valid_address(self, triggering_addr:str)->None:
         try:
             re.compile(triggering_addr)
@@ -123,7 +124,6 @@ class SocketEventPattern(BasePattern):
             elif port <= 1024:
                 warnings.warn(f"Port '{port}' is using a reserved port.")
 
-    # TODO: validate the message
     def _is_valid_message(self, triggering_msg:Any)->None:
         pass
 
@@ -171,12 +171,10 @@ class SocketEventPattern(BasePattern):
                 hint=f"SocketEventPattern.outputs[{k}]"
             )
 
-    # TODO: extend assemble_params; add path variable (but how does this relate to sockets?)
     def assemble_params_dict(self, event:Dict[str,Any])->Dict[str,Any]|List[Dict[str,Any]]:
         base_params =  super().assemble_params_dict(event)
         return base_params
 
-    # possible TODO: keywords? the function get_additional_replacement_keywords?
 
 
 
@@ -196,7 +194,7 @@ class SocketEventMonitor(BaseMonitor):
 
     def __init__(self, tmpfile_dir:str, patterns:Dict[str,SocketEventPattern], 
                  recipes:Dict[str,BaseRecipe],ports:Union[int, List[int]], autostart=False,
-                 name:str="")->None: # TODO: print, logging for debugging
+                 name:str="")->None:
         super().__init__(patterns, recipes, name=name)
         self._is_valid_tempfile_dir(tmpfile_dir)
         self.tmpfile_dir = tmpfile_dir
@@ -212,32 +210,22 @@ class SocketEventMonitor(BaseMonitor):
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             new_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.monitered_sockets.append(new_socket)
-        #self.monitered_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #self.monitered_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         if autostart:
             self.start()
 
-    # start monitoring the system, handle any connections
     def start(self):
         if not self._running:
             self._running = True
             for i in range(len(self.ports)):
-                print(f"binding to {self.ports[i]}")
                 self.monitered_sockets[i].bind((SERVER, self.ports[i]))
                 self.monitered_sockets[i].listen(1)
-                print("bind and listen good")
                 threading.Thread(
                     target=self.main_loop,
                     args=(i,)
                 ).start()
 
-    # handle incoming connections/messages
     def main_loop(self, i):
-        #print(f"binding to {self.port}")
-        #self.monitered_socket.bind((SERVER, self.port))
-        #self.monitered_socket.listen(1)
-        #print("bind and listen good")
         while self._running:
             conn, addr = self.monitered_sockets[i].accept()
             self.connected_sockets.append(conn)
@@ -246,7 +234,6 @@ class SocketEventMonitor(BaseMonitor):
                 args=(conn, addr, i)
             ).start()
 
-    # handle the actual connection, read the message
     def handle_connection(self, conn, addr, i):
         with conn:
             while self._running:
@@ -255,53 +242,28 @@ class SocketEventMonitor(BaseMonitor):
                     return
                 self.match(msg, addr, i)
 
-    # stop the system monitoring
     def stop(self):
-        '''
-        for conn in self.connected_sockets:
-            print("closing connected socket")
-            conn.close()
-        '''
         self._running = False
         for port in self.ports:
             socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((SERVER, port))
-            print(f"closing {port}")
         for sock in self.monitered_sockets:
             sock.close()
-        print("closed all good")
     
-    # TODO: given an event, determine a match based on patterns; send event to runner
     def match(self, msg, addr, i):
-        print(msg)
         for rule in self._rules.values():
-           # print(addr[0])
            matched_addr = re.search(rule.pattern.triggering_addr, addr[0])
            matched_format = self.format_check(rule, msg)
-           # print(f"the addr[1] is {addr[1]}")
-           print(f"The port receiving is {self.ports[i]}")
            matched_port = self.ports[i] in rule.pattern.triggering_ports
            if matched_addr and matched_port and matched_format:
                 tmp_file = tempfile.NamedTemporaryFile(
                     "wb", delete=False, dir=self.tmpfile_dir
                 )
-                #print("BEFORE WRITING:")
 
-                print(f"DOES THE TMP FILE EXIST? {os.path.exists(tmp_file.name)}")
-
-                with open(tmp_file.name, "rb") as f:
-                    print("BEFORE WRITING:")
-                    print(f.read())
-            
                 with open(tmp_file.name, "wb") as f:
                     f.write(msg)
                     f.close()
-                
-                with open(tmp_file.name, "rb") as f:
-                    print("AFTER WRITING:")
-                    print(f.read())
 
-                #print("AFTER WRITING:")
-                #print(tmp_file.read())
+                self.tmpfiles.append(tmp_file.name[tmp_file.name.index(self.tmpfile_dir):])
 
                 meow_event = create_socket_event(
                     tmp_file.name, rule, self.tmpfile_dir, time()
@@ -343,4 +305,4 @@ class SocketEventMonitor(BaseMonitor):
 
     def HTML_validator(self, msg: str):
         soup = BeautifulSoup(msg, 'html.parser')
-        return msg == str(soup) # TODO: correct?
+        return msg == str(soup)
